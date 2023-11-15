@@ -21,9 +21,9 @@ namespace QuantConnect.DataProcessing
         private int _symbolIndex = -1;
         private int _availableIndex = -1;
         private readonly DateTime _processingDate;
+        private readonly string _processedDirectory;
         private readonly DirectoryInfo _sourceDirectory;
         private readonly DirectoryInfo _outputDirectory;
-        private readonly DirectoryInfo _processedDirectory;
         private readonly Dictionary<string, ShortStock> _shortAvailabilityStocksByStock;
         private readonly Dictionary<DateTime, List<string>> _shortAvailabilityStocksByDate;
 
@@ -41,7 +41,7 @@ namespace QuantConnect.DataProcessing
             _processingDate = processingDate;
             _sourceDirectory = Directory.CreateDirectory(Path.Combine(rawDataDirectory.FullName, "equity", "usa", "shortable", "interactivebrokers", processingDate.ToString("yyyyMMdd")));
             _outputDirectory = Directory.CreateDirectory(Path.Combine(outputDirectory.FullName, "equity", "usa", "shortable", "interactivebrokers"));
-            _processedDirectory = Directory.CreateDirectory(Path.Combine(Globals.DataFolder, "equity", "usa", "shortable", "interactivebrokers"));
+            _processedDirectory = Path.Combine(Globals.DataFolder, "equity", "usa", "shortable", "interactivebrokers");
 
             Directory.CreateDirectory(Path.Combine(_outputDirectory.FullName, "symbols"));
             Directory.CreateDirectory(Path.Combine(_outputDirectory.FullName, "dates"));
@@ -164,7 +164,7 @@ namespace QuantConnect.DataProcessing
         private bool TryWriteSymbolFile(ShortStock shortStock)
         {
             var outputFile = new FileInfo(Path.Combine(_outputDirectory.FullName, "symbols", shortStock.Filename));
-            var existingFile = Path.Combine(_processedDirectory.FullName, "symbols", shortStock.Filename);
+            var existingFile = Path.Combine(_processedDirectory, "symbols", shortStock.Filename);
             if (File.Exists(existingFile))
             {
                 // merge existing data in the data folder
