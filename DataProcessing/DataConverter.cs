@@ -134,11 +134,16 @@ namespace QuantConnect.DataProcessing
                 return;
             }
 
-            var ticker = csv[_symbolIndex];
+            var ticker = csv[_symbolIndex].Replace(' ', '.');
             var borrowableShares = csv[_availableIndex];
             if (borrowableShares.Contains('>'))
             {
                 borrowableShares = borrowableShares.Replace(">", string.Empty);
+            }
+
+            if (!ValidTicker(date, ticker))
+            {
+                return;
             }
 
             if (!_shortAvailabilityStocksByStock.TryGetValue(ticker, out var shortStock))
@@ -196,6 +201,26 @@ namespace QuantConnect.DataProcessing
                 Log.Error(err, $"Failed to write data to: {outputFile.FullName}");
                 return false;
             }
+            return true;
+        }
+
+        /// <summary>
+        /// Validates that the ticker provided is not a special asset class ticker.
+        /// </summary>
+        /// <param name="date">Date ticker was encountered</param>
+        /// <param name="ticker">Ticker</param>
+        /// <returns>True if valid</returns>
+        private bool ValidTicker(DateTime date, string ticker)
+        {
+            var tickerClassCsv = ticker.Split('.');
+            if (tickerClassCsv.Length != 1 && tickerClassCsv[1] != "A" && tickerClassCsv[1] != "B" && tickerClassCsv[1] != "C")
+            {
+                // There can exist tickers such as: EPR.PRE, RLJ.PRA, SB.PRC, SB.PRD, WELL.PRI, WFC.PRL, WFC.PRQ, BAC.WS.A, C.PRN
+                // Since those are not class A/B/C/etc. tickers that we have in our map files, we will skip them.
+                Log.Trace($"DataConverter.IsValidTicker(): Encountered non-class A/B/C ticker on {date:yyyy-MM-dd}: `{ticker}` - Skipping...");
+                return false;
+            }
+
             return true;
         }
 
