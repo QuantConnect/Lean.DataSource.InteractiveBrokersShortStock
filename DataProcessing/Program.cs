@@ -15,9 +15,9 @@
 
 using System;
 using System.IO;
-using QuantConnect.Configuration;
 using QuantConnect.Logging;
-using QuantConnect.Util;
+using System.Globalization;
+using QuantConnect.Configuration;
 
 namespace QuantConnect.DataProcessing
 {
@@ -32,22 +32,21 @@ namespace QuantConnect.DataProcessing
         /// <returns>Exit code. 0 equals successful, and any other value indicates the downloader/converter failed.</returns>
         public static void Main()
         {
-            // Get the config values first before running. These values are set for us
-            // automatically to the value set on the website when defining this data type
-            var destinationDirectory = Path.Combine(
-                Config.Get("temp-output-directory", "/temp-output-directory"),
-                "alternative",
-                "vendorname");
+            var processingDateValue = Environment.GetEnvironmentVariable("QC_DATAFLEET_DEPLOYMENT_DATE");
+            var processingDate = DateTime.ParseExact(processingDateValue, "yyyyMMdd", CultureInfo.InvariantCulture);
 
-            MyCustomDataDownloader instance = null;
+            var destinationDirectory = Directory.CreateDirectory(Config.Get("temp-output-directory", "/temp-output-directory"));
+            var rawDataDirectory = new DirectoryInfo(Config.Get("raw-data-directory", "/raw"));
+
+            DataConverter instance = null;
             try
             {
                 // Pass in the values we got from the configuration into the downloader/converter.
-                instance = new MyCustomDataDownloader(destinationDirectory);
+                instance = new DataConverter(rawDataDirectory, destinationDirectory, processingDate);
             }
             catch (Exception err)
             {
-                Log.Error(err, $"QuantConnect.DataProcessing.Program.Main(): The downloader/converter for {MyCustomDataDownloader.VendorDataName} {MyCustomDataDownloader.VendorDataName} data failed to be constructed");
+                Log.Error(err, $"QuantConnect.DataProcessing.Program.Main(): The downloader/converter data failed to be constructed");
                 Environment.Exit(1);
             }
 
@@ -56,24 +55,14 @@ namespace QuantConnect.DataProcessing
             try
             {
                 // Run the data downloader/converter.
-                var success = instance.Run();
-                if (!success)
-                {
-                    Log.Error($"QuantConnect.DataProcessing.Program.Main(): Failed to download/process {MyCustomDataDownloader.VendorName} {MyCustomDataDownloader.VendorDataName} data");
-                    Environment.Exit(1);
-                }
+                instance.Convert();
             }
             catch (Exception err)
             {
-                Log.Error(err, $"QuantConnect.DataProcessing.Program.Main(): The downloader/converter for {MyCustomDataDownloader.VendorDataName} {MyCustomDataDownloader.VendorDataName} data exited unexpectedly");
+                Log.Error(err, $"QuantConnect.DataProcessing.Program.Main(): The downloader/converter data exited unexpectedly");
                 Environment.Exit(1);
             }
-            finally
-            {
-                // Run cleanup of the downloader/converter once it has finished or crashed.
-                instance.DisposeSafely();
-            }
-            
+
             // The downloader/converter was successful
             Environment.Exit(0);
         }
