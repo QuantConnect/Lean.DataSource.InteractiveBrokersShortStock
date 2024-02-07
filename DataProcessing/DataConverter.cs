@@ -20,6 +20,8 @@ namespace QuantConnect.DataProcessing
     {
         private int _symbolIndex = -1;
         private int _availableIndex = -1;
+        private int _rebateRateIndex = -1;
+        private int _feeRateIndex = -1;
         private readonly DateTime _processingDate;
         private readonly string _processedDirectory;
         private readonly DirectoryInfo _sourceDirectory;
@@ -130,15 +132,29 @@ namespace QuantConnect.DataProcessing
                 {
                     _symbolIndex = Array.IndexOf(csv, "SYM");
                     _availableIndex = Array.IndexOf(csv, "AVAILABLE");
+                    _rebateRateIndex = Array.IndexOf(csv, "REBATERATE");
+                    _feeRateIndex = Array.IndexOf(csv, "FEERATE");
                 }
                 return;
             }
 
             var ticker = csv[_symbolIndex].Replace(' ', '.');
             var borrowableShares = csv[_availableIndex];
+            var rebateRateIndex = csv[_rebateRateIndex];
+            var feeRateIndex = csv[_feeRateIndex];
             if (borrowableShares.Contains('>'))
             {
                 borrowableShares = borrowableShares.Replace(">", string.Empty);
+            }
+
+            if (rebateRateIndex == "NA")
+            {
+                rebateRateIndex = string.Empty;
+            }
+
+            if (feeRateIndex == "NA")
+            {
+                feeRateIndex = string.Empty;
             }
 
             if (!ValidTicker(date, ticker))
@@ -151,14 +167,14 @@ namespace QuantConnect.DataProcessing
                 _shortAvailabilityStocksByStock[ticker] = shortStock = new ShortStock(ticker);
             }
 
-            shortStock.Add(date, borrowableShares);
+            shortStock.Add(date, borrowableShares, rebateRateIndex, feeRateIndex);
 
             if (!_shortAvailabilityStocksByDate.TryGetValue(date, out var stocksByDate))
             {
                 _shortAvailabilityStocksByDate[date] = stocksByDate = new List<string>();
             }
 
-            stocksByDate.Add(string.Join(",", ticker.ToUpperInvariant(), borrowableShares));
+            stocksByDate.Add(string.Join(",", ticker.ToUpperInvariant(), borrowableShares, rebateRateIndex, feeRateIndex));
         }
 
         /// <summary>
@@ -177,7 +193,7 @@ namespace QuantConnect.DataProcessing
                 {
                     var csv = line.Split(',');
                     var date = Parse.DateTimeExact(csv[0], "yyyyMMdd");
-                    shortStock.TryAdd(date, csv[1]);
+                    shortStock.TryAdd(date, csv[1], csv[2], csv[3]);
                 }
             }
             return TryWriteFile(outputFile, shortStock.ToCsv());
@@ -229,7 +245,7 @@ namespace QuantConnect.DataProcessing
         /// </summary>
         private class ShortStock
         {
-            private readonly Dictionary<DateTime, string> _entries;
+            private readonly List<Tuple<DateTime, string, string, string>> _entries;
 
             /// <summary>
             /// Ticker of the stock
@@ -247,7 +263,7 @@ namespace QuantConnect.DataProcessing
             /// <param name="ticker">Point-in-time stock ticker</param>
             public ShortStock(string ticker)
             {
-                _entries = new Dictionary<DateTime, string>();
+                _entries = new List<Tuple<DateTime, string, string, string>>();
 
                 Ticker = ticker.ToLowerInvariant();
             }
@@ -259,9 +275,9 @@ namespace QuantConnect.DataProcessing
             /// </summary>
             /// <param name="date">Date of the entry</param>
             /// <param name="borrowableShares">Number of shares that are able to be borrowed</param>
-            public void Add(DateTime date, string borrowableShares)
+            public void Add(DateTime date, string borrowableShares, string rebateRateIndex, string feeRateIndex)
             {
-                _entries[date] = borrowableShares;
+                _entries.Add(new Tuple<DateTime, string, string, string>(date, borrowableShares, rebateRateIndex, feeRateIndex));
             }
 
             /// <summary>
@@ -271,9 +287,9 @@ namespace QuantConnect.DataProcessing
             /// </summary>
             /// <param name="date">Date of the entry</param>
             /// <param name="borrowableShares">Number of shares that are able to be borrowed</param>
-            public void TryAdd(DateTime date, string borrowableShares)
+            public void TryAdd(DateTime date, string borrowableShares, string rebateRateIndex, string feeRateIndex)
             {
-                _entries.TryAdd(date, borrowableShares);
+                _entries.Add(Tuple.Create(date, borrowableShares, rebateRateIndex, feeRateIndex));
             }
 
             /// <summary>
@@ -282,8 +298,12 @@ namespace QuantConnect.DataProcessing
             /// <returns>List of CSV lines, sorted in ascending order by date</returns>
             public IEnumerable<string> ToCsv()
             {
-                return _entries.OrderBy(kvp => kvp.Key)
-                    .Select(kvp => string.Join(",", kvp.Key.ToString("yyyyMMdd"), kvp.Value));
+                return _entries.OrderBy(entry => entry.Item1)
+                    .Select(entry => string.Join(",",
+                                   entry.Item1.ToString("yyyyMMdd"),
+                                   entry.Item2,
+                                   entry.Item3,
+                                   entry.Item4));
             }
         }
     }
