@@ -140,21 +140,21 @@ namespace QuantConnect.DataProcessing
 
             var ticker = csv[_symbolIndex].Replace(' ', '.');
             var borrowableShares = csv[_availableIndex];
-            var rebateRateIndex = csv[_rebateRateIndex];
-            var feeRateIndex = csv[_feeRateIndex];
+            var rebateRate = string.Empty;
+            var feeRate = string.Empty;
             if (borrowableShares.Contains('>'))
             {
                 borrowableShares = borrowableShares.Replace(">", string.Empty);
             }
 
-            if (rebateRateIndex == "NA")
+            if (_rebateRateIndex != -1 || csv[_rebateRateIndex] != "NA")
             {
-                rebateRateIndex = string.Empty;
+                rebateRate = csv[_rebateRateIndex];
             }
 
-            if (feeRateIndex == "NA")
+            if (_feeRateIndex != -1 || csv[_feeRateIndex] != "NA")
             {
-                feeRateIndex = string.Empty;
+                feeRate = csv[_feeRateIndex];
             }
 
             if (!ValidTicker(date, ticker))
@@ -167,14 +167,14 @@ namespace QuantConnect.DataProcessing
                 _shortAvailabilityStocksByStock[ticker] = shortStock = new ShortStock(ticker);
             }
 
-            shortStock.Add(date, borrowableShares, rebateRateIndex, feeRateIndex);
+            shortStock.Add(date, borrowableShares, rebateRate, feeRate);
 
             if (!_shortAvailabilityStocksByDate.TryGetValue(date, out var stocksByDate))
             {
                 _shortAvailabilityStocksByDate[date] = stocksByDate = new List<string>();
             }
 
-            stocksByDate.Add(string.Join(",", ticker.ToUpperInvariant(), borrowableShares, rebateRateIndex, feeRateIndex));
+            stocksByDate.Add(string.Join(",", ticker.ToUpperInvariant(), borrowableShares, rebateRate, feeRate));
         }
 
         /// <summary>
@@ -201,9 +201,11 @@ namespace QuantConnect.DataProcessing
 
         private bool TryWriteDateFile(DateTime date, List<string> contents)
         {
-            var outputFile = new FileInfo(Path.Combine(_outputDirectory.FullName, "dates", $"{date.ToString("yyyyMMdd")}.csv"));
+            var outputFile = new FileInfo(Path.Combine(_outputDirectory.FullName, "dates", $"{date:yyyyMMdd}.csv"));
+            var csvLines = new List<string> { "#SYM,AVAILABLE,REBATERATE,FEERATE" };
+            csvLines.AddRange(contents.OrderBy(x => x.Split(',')[0]));
             // Writes the contents ordered by ticker
-            return TryWriteFile(outputFile, contents.OrderBy(x => x.Split(',')[0]));
+            return TryWriteFile(outputFile, csvLines);
         }
 
         private bool TryWriteFile(FileInfo outputFile, IEnumerable<string> contents)
@@ -298,12 +300,12 @@ namespace QuantConnect.DataProcessing
             /// <returns>List of CSV lines, sorted in ascending order by date</returns>
             public IEnumerable<string> ToCsv()
             {
-                return _entries.OrderBy(entry => entry.Item1)
-                    .Select(entry => string.Join(",",
-                                   entry.Item1.ToString("yyyyMMdd"),
-                                   entry.Item2,
-                                   entry.Item3,
-                                   entry.Item4));
+                var csvLines = new List<string> { "#DATE,AVAILABLE,REBATERATE,FEERATE" };
+                csvLines.AddRange(_entries
+                    .OrderBy(entry => entry.Item1)
+                    .Select(entry => string.Join(",", entry.Item1.ToString("yyyyMMdd"), entry.Item2, entry.Item3, entry.Item4))
+                    );
+                return csvLines;
             }
         }
     }
