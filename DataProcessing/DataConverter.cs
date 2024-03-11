@@ -139,6 +139,10 @@ namespace QuantConnect.DataProcessing
             }
 
             var ticker = csv[_symbolIndex].Replace(' ', '.');
+            if (!ValidTicker(date, ticker))
+            {
+                return;
+            }
             var borrowableShares = csv[_availableIndex];
             var rebateRate = string.Empty;
             var feeRate = string.Empty;
@@ -146,27 +150,18 @@ namespace QuantConnect.DataProcessing
             {
                 borrowableShares = borrowableShares.Replace(">", string.Empty);
             }
-
-            if (_rebateRateIndex != -1 || csv[_rebateRateIndex] != "NA")
-            {
-                rebateRate = csv[_rebateRateIndex];
+            if (_rebateRateIndex != -1 && decimal.TryParse(csv[_rebateRateIndex], out var rebateRateValue))
+            {            
+                rebateRate = rebateRateValue.ToStringInvariant();
             }
-
-            if (_feeRateIndex != -1 || csv[_feeRateIndex] != "NA")
+            if (_feeRateIndex != -1 && decimal.TryParse(csv[_feeRateIndex], out var feeRateIndexValue))
             {
-                feeRate = csv[_feeRateIndex];
+                feeRate = feeRateIndexValue.ToStringInvariant();
             }
-
-            if (!ValidTicker(date, ticker))
-            {
-                return;
-            }
-
             if (!_shortAvailabilityStocksByStock.TryGetValue(ticker, out var shortStock))
             {
                 _shortAvailabilityStocksByStock[ticker] = shortStock = new ShortStock(ticker);
             }
-
             shortStock.Add(date, borrowableShares, rebateRate, feeRate);
 
             if (!_shortAvailabilityStocksByDate.TryGetValue(date, out var stocksByDate))
