@@ -184,7 +184,9 @@ namespace QuantConnect.DataProcessing
             if (File.Exists(existingFile))
             {
                 // merge existing data in the data folder
-                foreach (var line in File.ReadAllLines(existingFile))
+                foreach (var line in File.ReadAllLines(existingFile)
+                    // skip header
+                    .Skip(1))
                 {
                     var csv = line.Split(',');
                     var date = Parse.DateTimeExact(csv[0], "yyyyMMdd");
@@ -198,7 +200,7 @@ namespace QuantConnect.DataProcessing
         {
             var outputFile = new FileInfo(Path.Combine(_outputDirectory.FullName, "dates", $"{date:yyyyMMdd}.csv"));
             var csvLines = new List<string> { "#SYM,AVAILABLE,REBATERATE,FEERATE" };
-            csvLines.AddRange(contents.OrderBy(x => x.Split(',')[0]));
+            csvLines.AddRange(contents.DistinctBy(x => x.Split(',')[0]).OrderBy(x => x.Split(',')[0]));
             // Writes the contents ordered by ticker
             return TryWriteFile(outputFile, csvLines);
         }
@@ -297,6 +299,7 @@ namespace QuantConnect.DataProcessing
             {
                 var csvLines = new List<string> { "#DATE,AVAILABLE,REBATERATE,FEERATE" };
                 csvLines.AddRange(_entries
+                    .DistinctBy(entry => entry.Item1)
                     .OrderBy(entry => entry.Item1)
                     .Select(entry => string.Join(",", entry.Item1.ToString("yyyyMMdd"), entry.Item2, entry.Item3, entry.Item4))
                     );
