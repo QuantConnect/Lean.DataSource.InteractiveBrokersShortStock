@@ -8,18 +8,24 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Free space
-        run: df -h && rm -rf /opt/hostedtoolcache* && df -h
+      - name: Liberate disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
 
-      - name: Pull Foundation Image
-        uses: addnab/docker-run-action@v3
+      - uses: addnab/docker-run-action@v3
         with:
           image: quantconnect/lean:foundation
-
-      - name: BuildDataProcessing
-        run: dotnet build ./DataProcessing/DataProcessing.csproj /p:Configuration=Release /v:quiet /p:WarningLevel=1
+          options: --workdir /__w/Lean.DataSource.InteractiveBrokersShortStock/Lean.DataSource.InteractiveBrokersShortStock -v /home/runner/work:/__w
+          shell: bash
+          run: |
+            # BuildDataProcessing
+            dotnet build ./DataProcessing/DataProcessing.csproj /p:Configuration=Release /v:quiet /p:WarningLevel=1
