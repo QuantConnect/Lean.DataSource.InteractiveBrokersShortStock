@@ -26,37 +26,29 @@ if [[ "$deployment_date" != "$today" ]]; then
         fi
     }
 
-    restore() {
-        # Expedited takes minutes but is not offered for DEEP_ARCHIVE and can be refused for capacity
-        aws s3api restore-object --bucket "$bucket" --key "$1" --restore-request '{"Days":7,"GlacierJobParameters":{"Tier":"Expedited"}}' \
-            || aws s3api restore-object --bucket "$bucket" --key "$1" --restore-request '{"Days":7,"GlacierJobParameters":{"Tier":"Standard"}}'
-    }
-
-    # Older snapshots sit in Glacier: request a restore, wait a few minutes, else fail so the date is re-run later
-    for attempt in $(seq 1 10); do
-        pending=0
-        for file in usa.txt usa.txt.md5; do
-            [[ -s "$raw_directory/$file" ]] && continue
-            case $(archive_state "$prefix/$file") in
-                MISSING)
-                    if [[ "$file" == usa.txt ]]; then
-                        echo "rawsync.sh: s3://$bucket/$prefix/usa.txt does not exist, $deployment_date cannot be recovered" >&2
-                        exit 1
-                    fi ;;
-                READY)
-                    aws s3 cp --force-glacier-transfer "s3://$bucket/$prefix/$file" "$raw_directory/$file" ;;
-                ARCHIVED)
-                    restore "$prefix/$file"
-                    pending=1 ;;
-                RESTORING)
-                    pending=1 ;;
-            esac
-        done
-        (( pending == 0 )) && exit 0
-        sleep 60
+    # Older snapshots sit in Glacier and a restore can take hours: request it and fail, so the date is re-run once it completes
+    pending=0
+    for file in usa.txt usa.txt.md5; do
+        case $(archive_state "$prefix/$file") in
+            MISSING)
+                if [[ "$file" == usa.txt ]]; then
+                    echo "rawsync.sh: s3://$bucket/$prefix/usa.txt does not exist, $deployment_date cannot be recovered" >&2
+                    exit 1
+                fi ;;
+            READY)
+                aws s3 cp --force-glacier-transfer "s3://$bucket/$prefix/$file" "$raw_directory/$file" ;;
+            ARCHIVED)
+                aws s3api restore-object --bucket "$bucket" --key "$prefix/$file" --restore-request '{"Days":7,"GlacierJobParameters":{"Tier":"Standard"}}'
+                pending=1 ;;
+            RESTORING)
+                pending=1 ;;
+        esac
     done
-    echo "rawsync.sh: s3://$bucket/$prefix/ is still being restored from Glacier, re-run $deployment_date later" >&2
-    exit 1
+    if (( pending )); then
+        echo "rawsync.sh: s3://$bucket/$prefix/ is being restored from Glacier, re-run $deployment_date once the restore completes (up to 12 hours)" >&2
+        exit 1
+    fi
+    exit 0
 fi
 
 # A miss is recoverable only today, so retry before failing. The converter verifies usa.txt against usa.txt.md5
