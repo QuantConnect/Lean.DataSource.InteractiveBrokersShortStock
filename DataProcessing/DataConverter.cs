@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using QuantConnect.Logging;
 using System.Collections.Generic;
 
@@ -61,23 +62,27 @@ namespace QuantConnect.DataProcessing
             var dataPoints = 0;
             var timer = Stopwatch.StartNew();
 
-            foreach (var rawDataFile in _sourceDirectory.EnumerateFiles())
+            // IB only serves the current snapshot, so a missing or empty file is unrecoverable later and must not exit 0
+            var rawDataFile = new FileInfo(Path.Combine(_sourceDirectory.FullName, "usa.txt"));
+            if (!rawDataFile.Exists)
             {
-                if (!rawDataFile.Name.Equals("usa.txt"))
-                {
-                    continue;
-                }
+                throw new FileNotFoundException($"Raw data file not found for {_processingDate:yyyyMMdd}", rawDataFile.FullName);
+            }
+            VerifyChecksum(rawDataFile);
 
-                using (var fileStream = rawDataFile.OpenRead())
-                using (var reader = new StreamReader(fileStream, Encoding.UTF8))
+            using (var reader = new StreamReader(rawDataFile.FullName, Encoding.UTF8))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
                 {
-                    string line;
-                    while ((line = reader.ReadLine()) != null)
-                    {
-                        Process(_processingDate, line);
-                        dataPoints++;
-                    }
+                    Process(_processingDate, line);
+                    dataPoints++;
                 }
+            }
+
+            if (_shortAvailabilityStocksByDate.Count == 0)
+            {
+                throw new InvalidDataException($"No data rows found for {_processingDate:yyyyMMdd} in {rawDataFile.FullName}");
             }
 
             var aggregateFailuresSymbols = new List<string>();
@@ -111,6 +116,35 @@ namespace QuantConnect.DataProcessing
             timer.Stop();
             Log.Trace($"DataConverter.Convert(): Finished processing data at {dataPoints / timer.Elapsed.TotalSeconds} dpts/sec ({timer.Elapsed.TotalSeconds} seconds)");
         }
+
+        /// <summary>
+        /// Verifies the raw data file against the usa.txt.md5 file IB publishes next to it.
+        /// </summary>
+        /// <remarks>
+        /// Older archived snapshots may lack the md5 file, so it is only checked when present.
+        /// IB computes the hash over the file with LF line endings although it serves it with CRLF, so both are accepted.
+        /// </remarks>
+        /// <param name="rawDataFile">The usa.txt file to verify</param>
+        /// <exception cref="InvalidDataException">The file does not match its published hash</exception>
+        private static void VerifyChecksum(FileInfo rawDataFile)
+        {
+            var checksumFile = new FileInfo(rawDataFile.FullName + ".md5");
+            if (!checksumFile.Exists)
+            {
+                Log.Trace($"DataConverter.VerifyChecksum(): {checksumFile.FullName} not found, skipping checksum verification");
+                return;
+            }
+
+            var expected = File.ReadAllText(checksumFile.FullName).Trim().ToLowerInvariant();
+            var contents = File.ReadAllBytes(rawDataFile.FullName);
+            byte[] lfContents = [.. contents.Where(b => b != '\r')];
+            if (expected != ToMd5(lfContents) && expected != ToMd5(contents))
+            {
+                throw new InvalidDataException($"{rawDataFile.FullName} does not match its published md5 {expected}");
+            }
+        }
+
+        private static string ToMd5(byte[] contents) => System.Convert.ToHexStringLower(MD5.HashData(contents));
 
         /// <summary>
         /// Processes the data for a given date for eventual writing to a CSV output file.
